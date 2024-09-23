@@ -15,8 +15,8 @@ BASE_URL = os.getenv('BASE_URL', 'https://test.org/user/tgauth?key=')
 GROUP_IDS = list(map(int, os.getenv('GROUP_IDS', 'YOUR_GROUP_ID').split(',')))  # 从环境变量获取群组ID列表
 DB_NAME = 'data/users.db'
 
-NEED_AUTH_MSG = f"请先在 登录您的账号，然后请点击此链接完成验证: "
-WELCOME_AUTH_MSG= f"欢迎用户"
+NEED_AUTH_MSG = f"请先在  登录您的账号，然后请点击此链接完成验证: "
+WELCOME_AUTH_MSG= f"欢迎  用户"
 
 
 bot = telebot.TeleBot(API_TOKEN)
@@ -50,13 +50,13 @@ def validate():
     code = data.get('code')
     uid = data.get('uid')  # 获取传递的用户UID
 
-    logging.warn(f'Received request with admin key: {admin_key}, code: {code}, uid: {uid}\n')
+    logging.warning(f'Received request with admin key: {admin_key}, code: {code}, uid: {uid}\n')
     if admin_key != ADMIN_KEY:
         return jsonify({'status': 'error', 'message': 'Invalid admin key'}), 403
 
     user = User.get_or_none(code=code)
     if not user or time.time() - user.code_generated_time > 180:
-        logging.warn(f'Invalid or expired code: {code}\n')
+        logging.warning(f'Invalid or expired code: {code}\n')
         return jsonify({'status': 'error', 'message': '验证码错误'}), 401
 
     # 检查是否该uid或user_id已经绑定
@@ -76,11 +76,20 @@ def validate():
     user.save()
 
     try:
-        bot.send_message(user.user_id, "验证成功, 禁言稍后5-10分钟自动解除，或者您也可以退群重新加载")
+        for group_id in GROUP_IDS:
+            bot.restrict_chat_member(
+                    chat_id=group_id,
+                    user_id=user_id,
+                    can_send_messages=True,
+                    can_send_media_messages=True,
+                    can_send_other_messages=True,
+                    can_add_web_page_previews=True
+                )
+        bot.send_message(user.user_id, "验证成功, 禁言稍后3-10分钟自动解除，或者您也可以退群重新加载和私聊管理员")
     except Exception as e:
         logging.error(f'Failed to send message to user {user.user_id}: {e}')
     
-    logging.warn(f'User {user.user_id} validated and unmuted\n')
+    logging.warning(f'User {user.user_id} validated and unmuted\n')
     return jsonify({'status': 'success', 'message': '验证成功'})
 
 @bot.message_handler(commands=['start', 'help'])
@@ -121,14 +130,14 @@ def mask_uid(uid):
 @bot.message_handler(content_types=["new_chat_members"])
 def handle_new_member(message):
     if message.chat.id not in GROUP_IDS:
-        logging.warn(f'unknown group id {message.chat.id}\n') 
+        logging.warning(f'unknown group id {message.chat.id}\n') 
         return  # 只处理指定群组
-    logging.warn(f'New chat member joined: {message.new_chat_members[0].first_name} ({message.new_chat_members[0].id})\n')
+    logging.warning(f'New chat member joined: {message.new_chat_members[0].first_name} ({message.new_chat_members[0].id})\n')
     for new_member in message.new_chat_members:
         user_id = new_member.id
         user, created = User.get_or_create(user_id=user_id)
 
-        logging.warn(f'New member joined: {new_member.first_name} ({user_id})\n')
+        logging.warning(f'New member joined: {new_member.first_name} ({user_id})\n')
 
 
         try:
@@ -136,7 +145,7 @@ def handle_new_member(message):
             bot.restrict_chat_member(
                 chat_id=message.chat.id,
                 user_id=user_id,
-                until_date=int(time.time()) + 180,  # 禁言3分钟
+                until_date=int(time.time()) + 200,  # 禁言3分钟
                 can_send_messages=False,
                 can_send_media_messages=False,
                 can_send_other_messages=False,
@@ -165,10 +174,10 @@ def handle_new_member(message):
             Thread(target=kick_if_not_verified, args=(user_id, new_member.first_name, message.chat.id)).start()
 
 def kick_if_not_verified(user_id, user_name, chat_id):
-            time.sleep(30) 
+            time.sleep(180) 
             user = User.get_or_none(user_id=user_id)
             if user and not user.validated:
-                logging.warn(f'User {user_name} ({user_id}) did not verify , sleeping...\n')
+                logging.warning(f'User {user_name} ({user_id}) did not verify , sleeping...\n')
                 bot.kick_chat_member(chat_id, user_id)
                 bot.send_message(chat_id, f"{user_name} 因未验证已被移出群组。")
                 return
