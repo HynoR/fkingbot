@@ -1,1 +1,1 @@
-docker build -t paluza0606/tgbot .
+docker build -t tgbot .
